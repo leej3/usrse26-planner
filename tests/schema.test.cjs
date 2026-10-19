@@ -1,0 +1,3 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const Ajv=require('ajv');const addFormats=require('ajv-formats');const PD=require('../docs/planner-data.js');
+const ajv=new Ajv({allErrors:true,strict:false});addFormats(ajv);const validate=ajv.compile(require('../schema/snapshot-v3.schema.json'));
+for(const version of [1,2,3])test(`version ${version} fixture migrates to independently validated schema`,()=>{const raw=require(`./fixtures/v${version}.json`);const clean=PD.normalizeSnapshot(raw);assert.equal(validate(clean),true,JSON.stringify(validate.errors));assert.deepEqual(PD.normalizeSnapshot(clean),clean);});

@@ -1,6 +1,14 @@
 (function (root) {
   'use strict';
+  function validateSessions(sessions) {
+    const string=(x,max=200000)=>typeof x==='string'&&x.length<=max;
+    const safeId=id=>string(id,500)&&id.length>0&&!Object.prototype.hasOwnProperty.call(Object.prototype,id)&&!['__proto__','prototype'].includes(id)&&!/[\x00-\x1f]/.test(id);
+    if(!Array.isArray(sessions)||!sessions.length||sessions.length>500||sessions.some(s=>!s||!safeId(s.id)||!string(s.title,2000)||!string(s.room,2000)||(s.type!==undefined&&!string(s.type,2000))||(s.chair!==undefined&&!string(s.chair,2000))||(s.notes!==undefined&&!string(s.notes))||!string(s.start,100)||!string(s.end,100)||!Number.isFinite(Date.parse(s.start))||!Number.isFinite(Date.parse(s.end))||Date.parse(s.end)<=Date.parse(s.start)||!Array.isArray(s.talks)||s.talks.length>500||s.talks.some(t=>!t||!string(t.title,2000)||(t.abstract!==undefined&&!string(t.abstract))||(t.url!==undefined&&!string(t.url,2000))||(t.presenters!==undefined&&!string(t.presenters,10000)))))throw Error('Invalid cached program');
+    if(new Set(sessions.map(s=>s.id)).size!==sessions.length)throw Error('Duplicate program identities');
+    return sessions;
+  }
   function parse(text, previous = []) {
+    if(typeof text!=='string'||text.length>5000000)throw Error('Program response too large');
     const field = (body, name) => (body.match(new RegExp('^- '+name+': (.+)$', 'm')) || [,''])[1];
     const sessions = text.split(/^### /m).slice(1).map(block => {
       block = block.split(/^## /m)[0];
@@ -25,9 +33,9 @@
       if (matches.length === 1) { session.id = matches[0].id; claimed.add(session.id); }
     }
     if (new Set(sessions.map(s=>s.id)).size !== sessions.length) throw new Error('Ambiguous session identities; keeping your existing schedule.');
-    return sessions;
+    return validateSessions(sessions);
   }
-  const api = {parse};
+  const api = {parse,validateSessions};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ProgramUpdate = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,0 +1,41 @@
+{
+  "schema": "usrse26-planner",
+  "version": 3,
+  "selected": [
+    "session-a"
+  ],
+  "notes": {
+    "session-a": "Legacy note\nPreserve every line."
+  },
+  "custom": {
+    "theme": "blue"
+  },
+  "interested": [
+    "session-b"
+  ],
+  "suggested": [
+    "session-a"
+  ],
+  "talkNotes": {
+    "talk:https://example.org/a": "Talk question"
+  },
+  "tasks": [
+    {
+      "id": "task-1",
+      "text": "Contact speaker",
+      "done": false,
+      "priority": "high"
+    }
+  ],
+  "quickNotes": [
+    {
+      "id": "quick-1",
+      "text": "Hallway idea",
+      "createdAt": "2026-10-19T17:00:00Z",
+      "targetId": "session-a",
+      "tags": [
+        "idea"
+      ]
+    }
+  ]
+}

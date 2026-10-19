@@ -5,7 +5,7 @@ const {normalizeSnapshot, mergeSnapshots, comparePrograms, planningItems, confli
 const base = () => ({schema:'usrse26-planner',version:1,selected:['a'],notes:{a:'Local note'}});
 test('legacy snapshots migrate and attendance takes priority over interest', () => {
   const old = normalizeSnapshot(base());
-  assert.equal(old.version,2);
+  assert.equal(old.version,3);
   assert.deepEqual(old.tasks,[]);
   assert.deepEqual(normalizeSnapshot({...old,interested:['a','b','b']}).interested,['b']);
 });
@@ -15,7 +15,7 @@ test('rejects prototype keys, malformed types, overlarge collections and notes',
   assert.throws(() => normalizeSnapshot({...base(),notes:{a:'x'.repeat(200001)}}));
   assert.throws(() => normalizeSnapshot({...base(),interested:Array(10001).fill('a')}));
   assert.throws(() => normalizeSnapshot({...base(),tasks:[{id:'a',text:'a',done:'false'}]}));
-  assert.throws(() => normalizeSnapshot({...base(),version:3}));
+  assert.throws(() => normalizeSnapshot({...base(),version:4}));
 });
 test('merges divergent notes without destroying either and is repeatable', () => {
   const incoming = {...base(), selected:['b'], interested:['a','c'], notes:{a:'Remote note'},talkNotes:{talk:'Question'}};
@@ -94,4 +94,54 @@ test('talk planning items preserve identities and distinguish uncertain same-slo
   assert.equal(conflicts(first,parallel),true);
   assert.equal(conflicts(first,{...parallel,start:first.end,end:'2026-10-19T20:00:00Z'}),false);
   assert.equal(slots[0].kind,undefined);
+});
+
+test('versioned fixtures migrate idempotently without losing text or extensions', () => {
+  for (const version of [1,2,3]) {
+    const source = require('./fixtures/v'+version+'.json');
+    const normalized = normalizeSnapshot(source);
+    assert.equal(normalized.version,3);
+    assert.deepEqual(normalized.notes,source.notes);
+    assert.deepEqual(normalized.custom,source.custom);
+    assert.deepEqual(normalizeSnapshot(normalized),normalized);
+    if(version>=2) assert.equal(normalized.tasks[0].priority,'high');
+    if(version===3) assert.deepEqual(normalized.quickNotes[0].tags,['idea']);
+  }
+  const long = 'x'.repeat(200000);
+  assert.equal(normalizeSnapshot({...base(),notes:{a:long}}).notes.a,long);
+});
+test('future versions reject clearly and nested dangerous extension keys reject', () => {
+  assert.throws(()=>normalizeSnapshot({...base(),version:4}),/newer version.*Update the planner/);
+  assert.throws(()=>normalizeSnapshot({...base(),custom:JSON.parse('{"nested":{"__proto__":true}}')}),/Unsafe snapshot key/);
+  assert.throws(()=>normalizeSnapshot({...base(),tasks:[{id:'t',text:'a',done:false,extra:JSON.parse('{"constructor":true}')}]}),/Unsafe snapshot key/);
+});
+test('merge preserves conflicting root and task extension values', () => {
+  const a = {...base(),custom:{theme:'blue'},tasks:[{id:'t',text:'Ask',done:false,priority:'high'}]};
+  const b = {...base(),custom:{theme:'red'},newFeature:42,tasks:[{id:'t',text:'Ask',done:true,priority:'low'}]};
+  const merged = mergeSnapshots(a,b);
+  assert.deepEqual(merged.custom,{theme:'blue'});
+  assert.equal(merged.newFeature,42);
+  assert.deepEqual(merged._mergeConflicts,[{field:'custom',value:{theme:'red'}}]);
+  assert.deepEqual(merged.tasks[0]._mergeConflicts,[{field:'priority',value:'low'}]);
+  assert.deepEqual(mergeSnapshots(merged,b)._mergeConflicts,merged._mergeConflicts);
+});
+test('quick note merge preserves divergent text, metadata, and stable links', () => {
+  const note = {id:'q',text:'Local idea',createdAt:'2026-10-19T17:00:00Z',targetId:'talk:https://example.org/talk',color:'blue'};
+  const a = {...base(),quickNotes:[note]};
+  const b = {...base(),quickNotes:[{...note,text:'Remote idea',color:'red'}]};
+  const merged = mergeSnapshots(a,b);
+  assert.deepEqual(merged.quickNotes.map(n=>n.text),['Local idea','Remote idea']);
+  assert.equal(mergeSnapshots(merged,b).quickNotes.length,2);
+  const metadata = mergeSnapshots(a,{...base(),quickNotes:[{...note,color:'red'}]});
+  assert.deepEqual(metadata.quickNotes[0]._mergeConflicts,[{field:'color',value:'red'}]);
+  assert.throws(()=>normalizeSnapshot({...base(),quickNotes:[{...note,createdAt:'bad'}]}));
+  assert.throws(()=>normalizeSnapshot({...base(),quickNotes:[{...note,targetId:'__proto__'}]}));
+});
+
+test('ordinary names shared with Object.prototype remain valid note keys', () => {
+  const merged = mergeSnapshots({...base(),notes:{toString:'Local'}},{...base(),notes:{toString:'Imported',valueOf:'Question'}});
+  assert.equal(merged.notes.valueOf,'Question');
+  assert.match(merged.notes.toString,/Local[\s\S]*Imported/);
+  assert.equal(Object.getPrototypeOf(merged.notes),Object.prototype);
+  assert.equal(typeof Object.prototype.toString,'function');
 });

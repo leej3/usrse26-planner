@@ -42,22 +42,74 @@
       if (seen.has(key)) fail('Duplicate follow-up identifier.');
       seen.add(key);
       if (typeof task.text !== 'string' || !task.text.trim() || task.text.length > 200000 || typeof task.done !== 'boolean') fail('Invalid follow-up.');
-      const result = {id:key, text:task.text, done:task.done};
+      const result = {...task, id:key, text:task.text, done:task.done};
       for (const field of ['sessionId', 'talkId']) if (task[field] !== undefined && task[field] !== null && task[field] !== '') result[field] = id(task[field]);
       return result;
     });
   }
-  function normalizeSnapshot(raw) {
+  // Copy only JSON data, reject dangerous keys at every depth, and bound traversal.
+  function safeCopy(value, depth = 0, budget = {count:0}) {
+    if (depth > 40 || ++budget.count > 250000) fail('Snapshot structure is too large or deeply nested.');
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (Array.isArray(value)) return value.map(item => safeCopy(item, depth + 1, budget));
+    record(value);
+    const result = {};
+    for (const [key, item] of Object.entries(value)) result[key] = safeCopy(item, depth + 1, budget);
+    return result;
+  }
+  function timestamp(value) {
+    if (typeof value !== 'string' || value.length > 100 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value) || !Number.isFinite(Date.parse(value))) fail('Invalid note timestamp.');
+    return value;
+  }
+  function quickNotes(value) {
+    if (!Array.isArray(value) || value.length > LIMIT) fail('Invalid or oversized quick-note list.');
+    const seen = new Set();
+    return value.map(note => {
+      record(note);
+      const key = id(note.id);
+      if (seen.has(key)) fail('Duplicate quick-note identifier.');
+      seen.add(key);
+      if (typeof note.text !== 'string' || note.text.length > 200000) fail('Invalid or oversized quick note.');
+      const result = {...note, id:key, text:note.text, createdAt:timestamp(note.createdAt)};
+      if (note.updatedAt !== undefined) result.updatedAt = timestamp(note.updatedAt);
+      if (note.targetId !== undefined) result.targetId = id(note.targetId);
+      return result;
+    });
+  }
+  function normalizeSnapshot(input) {
+    const raw = safeCopy(input);
     record(raw);
-    if (raw.schema !== 'usrse26-planner' || ![1, 2].includes(raw.version)) fail();
+    if (raw.schema !== 'usrse26-planner') fail();
+    if (Number.isInteger(raw.version) && raw.version > 3) fail('This snapshot uses a newer version (' + raw.version + '). Update the planner before restoring it.');
+    if (![1, 2, 3].includes(raw.version)) fail('Unsupported snapshot version.');
+    // Explicit migrations preserve all existing fields; normalization validates them next.
+    if (raw.version === 1) { raw.version = 2; for (const [key,value] of Object.entries({interested:[],suggested:[],talkNotes:{},tasks:[]})) if (raw[key] === undefined) raw[key] = value; }
+    if (raw.version === 2) { raw.version = 3; if (raw.quickNotes === undefined) raw.quickNotes = []; }
     const selected = ids(raw.selected);
-    const result = {schema:'usrse26-planner', version:2, selected,
+    const result = {...raw, schema:'usrse26-planner', version:3, selected,
       interested:ids(raw.interested === undefined ? [] : raw.interested).filter(key => !selected.includes(key)),
       suggested:ids(raw.suggested === undefined ? [] : raw.suggested),
       notes:noteMap(raw.notes), talkNotes:noteMap(raw.talkNotes === undefined ? {} : raw.talkNotes),
-      tasks:tasks(raw.tasks === undefined ? [] : raw.tasks)};
-    if (typeof raw.exportedAt === 'string' && Number.isFinite(Date.parse(raw.exportedAt))) result.exportedAt = new Date(raw.exportedAt).toISOString();
-    if (JSON.stringify(result).length > 10000000) fail('Snapshot is too large (10 MB maximum).');
+      tasks:tasks(raw.tasks === undefined ? [] : raw.tasks), quickNotes:quickNotes(raw.quickNotes === undefined ? [] : raw.quickNotes)};
+    if (raw.exportedAt !== undefined) timestamp(raw.exportedAt);
+    if (new TextEncoder().encode(JSON.stringify(result)).length > 10000000) fail('Snapshot is too large (10 MB maximum).');
+    return result;
+  }
+  function mergeExtra(a, b, known) {
+    const result = {...a}, conflicts = [];
+    for (const source of [a._mergeConflicts, b._mergeConflicts]) {
+      if (source !== undefined) {
+        if (!Array.isArray(source)) fail('Invalid preserved merge-conflict list.');
+        conflicts.push(...source);
+      }
+    }
+    for (const [key, value] of Object.entries(b)) {
+      if (known.includes(key) || key === '_mergeConflicts') continue;
+      if (!Object.prototype.hasOwnProperty.call(a,key)) result[key] = value;
+      else if (JSON.stringify(a[key]) !== JSON.stringify(value)) conflicts.push({field:key,value});
+    }
+    if (conflicts.length) result._mergeConflicts = [...new Map(conflicts.map(item => [JSON.stringify(item),item])).values()];
     return result;
   }
   function mergeText(current, incoming) {
@@ -70,7 +122,7 @@
   }
   function mergeNotes(current, incoming) {
     const result = {...current};
-    for (const [key, text] of Object.entries(incoming)) result[key] = mergeText(result[key], text);
+    for (const [key, text] of Object.entries(incoming)) result[key] = mergeText(Object.prototype.hasOwnProperty.call(result,key) ? result[key] : '', text);
     return result;
   }
   function mergeSnapshots(current, incoming) {
@@ -80,21 +132,38 @@
       const existing = mergedTasks.find(t => t.id === task.id);
       if (!existing) { mergedTasks.push({...task}); continue; }
       if (existing.text === task.text && existing.sessionId === task.sessionId && existing.talkId === task.talkId) {
-        existing.done = existing.done && task.done;
+        Object.assign(existing, mergeExtra(existing,task,['id','text','done','sessionId','talkId']), {done:existing.done && task.done});
       } else {
         // Preserve both versions when a shared ID has divergent content or links.
         const stem = task.id.slice(0, 470) + '-imported';
         const equivalent = mergedTasks.find(t => t.id.startsWith(stem) && t.text === task.text && t.sessionId === task.sessionId && t.talkId === task.talkId);
-        if (equivalent) { equivalent.done = equivalent.done && task.done; continue; }
+        if (equivalent) { Object.assign(equivalent,mergeExtra(equivalent,task,['id','text','done','sessionId','talkId']), {done:equivalent.done && task.done}); continue; }
         let key = stem, count = 2;
         while (mergedTasks.some(t => t.id === key)) key = stem + '-' + count++;
         mergedTasks.push({...task, id:key});
       }
     }
-    return normalizeSnapshot({schema:'usrse26-planner', version:2, exportedAt:new Date().toISOString(),
+    const mergedQuickNotes = a.quickNotes.map(note => ({...note}));
+    for (const note of b.quickNotes) {
+      let existing = mergedQuickNotes.find(n => n.id === note.id);
+      const stem = note.id.slice(0,470) + '-imported';
+      if (existing && (existing.text !== note.text || existing.targetId !== note.targetId)) {
+        existing = mergedQuickNotes.find(n => n.id.startsWith(stem) && n.text === note.text && n.targetId === note.targetId);
+        if (!existing) {
+          let key = stem, count = 2;
+          while (mergedQuickNotes.some(n => n.id === key)) key = stem + '-' + count++;
+          mergedQuickNotes.push({...note,id:key});
+          continue;
+        }
+      }
+      if (!existing) mergedQuickNotes.push({...note});
+      else Object.assign(existing,mergeExtra(existing,note,['id','text','targetId']));
+    }
+    const extras = mergeExtra(a,b,['schema','version','exportedAt','selected','interested','suggested','notes','talkNotes','tasks','quickNotes']);
+    return normalizeSnapshot({...extras, schema:'usrse26-planner', version:3, exportedAt:new Date().toISOString(),
       selected:[...new Set([...a.selected, ...b.selected])], interested:[...new Set([...a.interested, ...b.interested])],
       suggested:[...new Set([...a.suggested, ...b.suggested])],
-      notes:mergeNotes(a.notes,b.notes), talkNotes:mergeNotes(a.talkNotes,b.talkNotes), tasks:mergedTasks});
+      notes:mergeNotes(a.notes,b.notes), talkNotes:mergeNotes(a.talkNotes,b.talkNotes), tasks:mergedTasks, quickNotes:mergedQuickNotes});
   }
   function comparePrograms(previousSessions, newSessions) {
     const previous = new Map(previousSessions.map(session => [session.id,session]));

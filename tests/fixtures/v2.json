@@ -1,0 +1,30 @@
+{
+  "schema": "usrse26-planner",
+  "version": 2,
+  "selected": [
+    "session-a"
+  ],
+  "notes": {
+    "session-a": "Legacy note\nPreserve every line."
+  },
+  "custom": {
+    "theme": "blue"
+  },
+  "interested": [
+    "session-b"
+  ],
+  "suggested": [
+    "session-a"
+  ],
+  "talkNotes": {
+    "talk:https://example.org/a": "Talk question"
+  },
+  "tasks": [
+    {
+      "id": "task-1",
+      "text": "Contact speaker",
+      "done": false,
+      "priority": "high"
+    }
+  ]
+}

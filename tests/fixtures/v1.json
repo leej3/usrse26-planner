@@ -1,0 +1,13 @@
+{
+  "schema": "usrse26-planner",
+  "version": 1,
+  "selected": [
+    "session-a"
+  ],
+  "notes": {
+    "session-a": "Legacy note\nPreserve every line."
+  },
+  "custom": {
+    "theme": "blue"
+  }
+}

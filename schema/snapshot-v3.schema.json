@@ -1,0 +1,197 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://leej3.github.io/usrse26-planner/schema/snapshot-v3.schema.json",
+  "title": "USRSE26 planner snapshot version 3",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/definitions/safe"
+    }
+  ],
+  "required": [
+    "schema",
+    "version",
+    "selected",
+    "interested",
+    "suggested",
+    "notes",
+    "talkNotes",
+    "tasks",
+    "quickNotes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "usrse26-planner"
+    },
+    "version": {
+      "const": 3
+    },
+    "exportedAt": {
+      "type": "string",
+      "maxLength": 100,
+      "format": "date-time"
+    },
+    "selected": {
+      "type": "array",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/id"
+      }
+    },
+    "interested": {
+      "type": "array",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/id"
+      }
+    },
+    "suggested": {
+      "type": "array",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/id"
+      }
+    },
+    "notes": {
+      "type": "object",
+      "maxProperties": 10000,
+      "propertyNames": {
+        "$ref": "#/definitions/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/text"
+      }
+    },
+    "talkNotes": {
+      "type": "object",
+      "maxProperties": 10000,
+      "propertyNames": {
+        "$ref": "#/definitions/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/text"
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "text",
+          "done"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/definitions/id"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200000
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "sessionId": {
+            "$ref": "#/definitions/id"
+          },
+          "talkId": {
+            "$ref": "#/definitions/id"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "quickNotes": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "text",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/definitions/id"
+          },
+          "text": {
+            "$ref": "#/definitions/text"
+          },
+          "createdAt": {
+            "type": "string",
+            "maxLength": 100,
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "maxLength": 100,
+            "format": "date-time"
+          },
+          "targetId": {
+            "$ref": "#/definitions/id"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "not": {
+        "enum": [
+          "__proto__",
+          "constructor",
+          "prototype"
+        ]
+      }
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 200000
+    },
+    "safe": {
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/safe"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "not": {
+              "enum": [
+                "__proto__",
+                "constructor",
+                "prototype"
+              ]
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/safe"
+          }
+        }
+      ]
+    }
+  }
+}
