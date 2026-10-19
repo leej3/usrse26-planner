@@ -1,0 +1,12 @@
+.talk-note { margin-block: 1.25rem; }
+.talk-note label, .followup-form label { display: block; font-weight: 600; margin-bottom: .5rem; }
+.talk-note textarea { width: 100%; min-height: 6rem; box-sizing: border-box; font: inherit; }
+.followup-form { display: grid; gap: .5rem; }
+.followup-form input, .followup-item input[type=text] { min-width: 0; width: 100%; box-sizing: border-box; min-height: 44px; font: inherit; padding: .6rem; }
+.followup-form button, .followup-item button { min-height: 44px; }
+.followup-list { list-style: none; padding: 0; }
+.followup-item { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: .35rem; align-items: center; margin-block: .75rem; }
+.followup-item input[type=checkbox] { width: 24px; height: 24px; margin: 10px; }
+.followup-item.completed input[type=text] { text-decoration: line-through; }
+.followup-status { font-size: .875rem; }
+@media (max-width: 380px) { .followup-item button { grid-column: 2 / -1; justify-self: end; } }
