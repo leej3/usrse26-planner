@@ -1,5 +1,5 @@
 /* Bump this version when changing the offline application shell. */
-const CACHE = 'usrse26-offline-v3';
+const CACHE = 'usrse26-offline-v4';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'offline.js', 'planner-data.js', 'notes.js', 'notes.css', 'program-update.js', 'program.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const absolute = path => new URL(path, self.registration.scope).href;
 self.addEventListener('install', event => {

@@ -53,6 +53,7 @@
     const selected = ids(raw.selected);
     const result = {schema:'usrse26-planner', version:2, selected,
       interested:ids(raw.interested === undefined ? [] : raw.interested).filter(key => !selected.includes(key)),
+      suggested:ids(raw.suggested === undefined ? [] : raw.suggested),
       notes:noteMap(raw.notes), talkNotes:noteMap(raw.talkNotes === undefined ? {} : raw.talkNotes),
       tasks:tasks(raw.tasks === undefined ? [] : raw.tasks)};
     if (typeof raw.exportedAt === 'string' && Number.isFinite(Date.parse(raw.exportedAt))) result.exportedAt = new Date(raw.exportedAt).toISOString();
@@ -92,6 +93,7 @@
     }
     return normalizeSnapshot({schema:'usrse26-planner', version:2, exportedAt:new Date().toISOString(),
       selected:[...new Set([...a.selected, ...b.selected])], interested:[...new Set([...a.interested, ...b.interested])],
+      suggested:[...new Set([...a.suggested, ...b.suggested])],
       notes:mergeNotes(a.notes,b.notes), talkNotes:mergeNotes(a.talkNotes,b.talkNotes), tasks:mergedTasks});
   }
   function comparePrograms(previousSessions, newSessions) {
@@ -105,6 +107,30 @@
         return fields.length ? [{id:after.id, before, after, fields}] : [];
       })};
   }
+  function planningItems(sessions) {
+    const result = [], seen = new Set(sessions.map(session => session.id));
+    for (const session of sessions) {
+      const parent = {...session, kind:'session'};
+      delete parent.parentId;
+      result.push(parent);
+      for (const talk of session.talks || []) {
+        const key = typeof talk.url === 'string' && /^https:\/\//.test(talk.url)
+          ? 'talk:' + talk.url
+          : 'talk:' + session.id + ':' + encodeURIComponent(talk.title || 'Untitled talk');
+        // A repeated official talk link represents one selectable talk.
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push({...parent, id:key, title:talk.title, talks:[talk], parentId:session.id,
+          kind:'talk', slotTitle:session.title, timingUnknown:true});
+      }
+    }
+    return result;
+  }
+  function conflicts(a, b) {
+    return (a.parentId || a.id) !== (b.parentId || b.id)
+      && Date.parse(a.start) < Date.parse(b.end)
+      && Date.parse(b.start) < Date.parse(a.end);
+  }
   function nowNext(sessions, selected, nowDate) {
     const now = new Date(nowDate === undefined ? Date.now() : nowDate).getTime();
     if (!Number.isFinite(now)) throw new Error('Invalid current time.');
@@ -115,5 +141,5 @@
     const upcoming = planned.filter(session => Date.parse(session.start) > now);
     return {current, next:upcoming.length ? upcoming.filter(session => Date.parse(session.start) === Date.parse(upcoming[0].start)) : []};
   }
-  return {normalizeSnapshot, mergeSnapshots, comparePrograms, nowNext};
+  return {normalizeSnapshot, mergeSnapshots, comparePrograms, planningItems, conflicts, nowNext};
 });

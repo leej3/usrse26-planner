@@ -6,7 +6,7 @@ window.FieldnotesNotes = (() => {
   function talkId(session, talk) {
     // Official anchors survive title corrections and changes to session placement.
     if (typeof talk.url === 'string' && /^https:\/\//.test(talk.url)) return 'talk:' + talk.url;
-    return 'talk:' + session.id + ':' + encodeURIComponent(talk.title || 'Untitled talk');
+    return 'talk:' + (session.parentId || session.id) + ':' + encodeURIComponent(talk.title || 'Untitled talk');
   }
   function element(tag, text, className) {
     const node = document.createElement(tag);
@@ -125,7 +125,7 @@ window.FieldnotesNotes = (() => {
     if (!tasks.length) lines.push('No follow-ups.');
     const seenSessions = new Set(), seenTalks = new Set();
     for (const session of sessions) {
-      const related = (session.talks || []).filter(talk => own(talkNotes, talkId(session, talk)));
+      const related = (session.talks || []).filter(talk => own(talkNotes, talkId(session, talk)) || own(sessionNotes, talkId(session, talk)));
       const note = own(sessionNotes, session.id);
       if (!note && !related.length) continue;
       seenSessions.add(session.id);
@@ -134,7 +134,9 @@ window.FieldnotesNotes = (() => {
       for (const talk of related) {
         const id = talkId(session, talk);
         seenTalks.add(id);
-        lines.push('### ' + md(talk.title), '', own(talkNotes, id), '');
+        seenSessions.add(id);
+        const texts = [...new Set([own(talkNotes, id), own(sessionNotes, id)].filter(Boolean))];
+        lines.push('### ' + md(talk.title), '', texts.join('\n\n'), '');
       }
     }
     const older = [...Object.entries(sessionNotes).filter(([id]) => !seenSessions.has(id)), ...Object.entries(talkNotes).filter(([id]) => !seenTalks.has(id))];

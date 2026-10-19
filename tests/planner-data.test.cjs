@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {normalizeSnapshot, mergeSnapshots, comparePrograms, nowNext} = require('../docs/planner-data.js');
+const {normalizeSnapshot, mergeSnapshots, comparePrograms, planningItems, conflicts, nowNext} = require('../docs/planner-data.js');
 const base = () => ({schema:'usrse26-planner',version:1,selected:['a'],notes:{a:'Local note'}});
 test('legacy snapshots migrate and attendance takes priority over interest', () => {
   const old = normalizeSnapshot(base());
@@ -55,4 +55,43 @@ test('now/next handles offsets, exact boundaries, overlapping alternatives and c
   assert.deepEqual(morning.next.map(s=>s.id),['b','c']);
   assert.deepEqual(nowNext(sessions,selected,'2026-10-19T17:00:00Z').current.map(s=>s.id),['b','c']);
   assert.deepEqual(nowNext(sessions,selected,'2026-10-22T00:00:00Z'),{current:[],next:[]});
+});
+
+test('suggestions default empty for older snapshots and remain independent of attendance', () => {
+  assert.deepEqual(normalizeSnapshot(base()).suggested, []);
+  assert.deepEqual(normalizeSnapshot({...base(),version:2}).suggested, []);
+  const current = {...base(),suggested:['a','c','a']};
+  assert.deepEqual(normalizeSnapshot(current).suggested,['a','c']);
+  const merged = mergeSnapshots(current,{...base(),selected:['c'],interested:['d'],suggested:['d','a']});
+  assert.deepEqual(merged.suggested,['a','c','d']);
+  assert.deepEqual(merged.selected,['a','c']);
+  assert.deepEqual(merged.interested,['d']);
+  assert.throws(() => normalizeSnapshot({...base(),suggested:['__proto__']}));
+  assert.throws(() => normalizeSnapshot({...base(),suggested:'a'}));
+});
+
+test('talk planning items preserve identities and distinguish uncertain same-slot timing', () => {
+  const slots = [{id:'slot-a',title:'Slot A',start:'2026-10-19T10:30:00-07:00',end:'2026-10-19T12:00:00-07:00',room:'A',talks:[
+    {title:'First talk',url:'https://example.org/talk/first'},
+    {title:'Second talk'},
+    {title:'Duplicate',url:'https://example.org/talk/first'}
+  ]},{id:'slot-b',title:'Slot B',start:'2026-10-19T17:30:00Z',end:'2026-10-19T19:00:00Z',talks:[{title:'Parallel',url:'https://example.org/talk/parallel'}]}];
+  const items = planningItems(slots);
+  assert.equal(items.length,5);
+  assert.equal(new Set(items.map(item=>item.id)).size,5);
+  const first = items.find(item=>item.id==='talk:https://example.org/talk/first');
+  const second = items.find(item=>item.id==='talk:slot-a:Second%20talk');
+  const parallel = items.find(item=>item.id==='talk:https://example.org/talk/parallel');
+  assert.equal(first.parentId,'slot-a');
+  assert.equal(first.slotTitle,'Slot A');
+  assert.equal(first.timingUnknown,true);
+  assert.equal(first.talks.length,1);
+  assert.equal(first.room,'A');
+  assert.equal(items[0].kind,'session');
+  assert.equal(items[0].parentId,undefined);
+  assert.equal(conflicts(first,second),false);
+  assert.equal(conflicts(items[0],first),false);
+  assert.equal(conflicts(first,parallel),true);
+  assert.equal(conflicts(first,{...parallel,start:first.end,end:'2026-10-19T20:00:00Z'}),false);
+  assert.equal(slots[0].kind,undefined);
 });
